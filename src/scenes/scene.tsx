@@ -2,8 +2,8 @@ import { OrbitControls, OrthographicCamera } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useRef } from 'react'
 import { useKeyboard, useKeyDown } from 'src/hooks/input/keyboard'
-import { useCollider } from 'src/world/CollisionSystem'
-import { useMotion } from 'src/world/MotionSystem'
+import { usePhysics } from 'src/world/PhysicsSystem'
+import { useFixedUpdate } from 'src/world/World'
 import * as THREE from 'three'
 
 export default function Scene() {
@@ -28,13 +28,19 @@ export default function Scene() {
   )
 }
 
-function Floor({ position, size }) {
-  const mesh = useRef<THREE.Mesh>(null)
-  useCollider(mesh, { type: 'fixed', useMesh: true })
+function Floor({
+  position,
+  size,
+}: {
+  position: [number, number, number]
+  size: number
+}) {
+  const ref = useRef<THREE.Mesh>(null)
+  usePhysics(ref, { collider: 'auto', collisionType: 'fixed' })
 
   return (
     <mesh
-      ref={mesh}
+      ref={ref}
       position={position}
       rotation={[-Math.PI / 2, 0, 0]}
       receiveShadow
@@ -45,18 +51,19 @@ function Floor({ position, size }) {
     </mesh>
   )
 }
+
 function Player() {
   const keymap = useKeyboard()
   const ref = useRef<THREE.Mesh>(null)
-  const motion = useMotion(ref, {
+  const physics = usePhysics(ref, {
     velocity: [0, 0, 0],
     gravity: [0, -9.8, 0],
+    collider: 'auto',
+    collisionType: 'dynamic',
   })
 
-  useCollider(ref, { type: 'dynamic', useMesh: true })
-
-  useFrame(() => {
-    const vel = motion.current!.velocity
+  useFixedUpdate(() => {
+    const vel = physics.current!.velocity
     const speed = 5
 
     if (ref.current) {
@@ -83,7 +90,7 @@ function Player() {
   })
 
   useKeyDown('Space', () => {
-    motion.current!.velocity.y = 7
+    physics.current!.velocity.y = 7
   })
 
   return (
