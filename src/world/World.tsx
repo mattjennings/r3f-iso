@@ -41,7 +41,11 @@ export function World(props: { children: ReactNode }) {
   )
 
   useRaf((delta) => {
-    accumulator.current += delta
+    accumulator.current = Math.min(
+      accumulator.current + delta,
+      // cap out at 60 frames as to avoid a large amount of updates queuing up
+      (1 / FIXED_UPDATE_FPS) * 60,
+    )
 
     const fixedDelta = 1 / FIXED_UPDATE_FPS
 

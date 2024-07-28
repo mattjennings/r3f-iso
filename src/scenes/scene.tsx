@@ -90,7 +90,7 @@ function Player() {
   })
 
   useKeyDown('Space', () => {
-    physics.current!.velocity.y = 7
+    physics.current!.velocity.y = 5
   })
 
   return (

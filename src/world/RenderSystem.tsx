@@ -19,9 +19,9 @@ export function RenderSystem({ priority, children }: SystemProps) {
   useRaf((delta) => {
     const blend = world.getFrameInterpolation()
 
-    // since motion system is running in a fixed step, interpolate the positions between
-    // frames
     for (const [object, data] of physicsSystem.objects) {
+      // since physics system is running in a fixed step,
+      // interpolate the positions between frames
       const interpolatedPosition = new THREE.Vector3().lerpVectors(
         data.prevPosition,
         data.position,

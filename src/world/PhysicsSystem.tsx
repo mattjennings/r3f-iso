@@ -8,6 +8,7 @@ interface PhysicsContextValue {
 }
 
 interface PhysicsObjectData {
+  acceleration: THREE.Vector3
   velocity: THREE.Vector3
   gravity: THREE.Vector3
   position: THREE.Vector3
@@ -23,6 +24,7 @@ export const PhysicsContext = React.createContext<PhysicsContextValue>({
 export const usePhysics = (
   object: RefObject<Object3D>,
   data: {
+    acceleration?: [number, number, number]
     position?: [number, number, number]
     velocity?: [number, number, number]
     gravity?: [number, number, number]
@@ -45,6 +47,7 @@ export const usePhysics = (
     body.current = {
       position: object.current.position.clone(),
       prevPosition: object.current.position.clone(),
+      acceleration: new THREE.Vector3(...(data.acceleration ?? [0, 0, 0])),
       velocity: new THREE.Vector3(...(data.velocity ?? [0, 0, 0])),
       gravity: new THREE.Vector3(...(data.gravity ?? [0, 0, 0])),
       collider:
@@ -73,15 +76,24 @@ export function PhysicsSystem({ priority, children }: SystemProps) {
     (delta) => {
       for (const [
         obj,
-        { position, velocity, gravity, prevPosition, collider, collisionType },
+        {
+          position,
+          velocity,
+          gravity,
+          prevPosition,
+          acceleration,
+          collisionType,
+        },
       ] of objects.current) {
-        if (collisionType === 'dynamic') {
-          prevPosition.copy(position)
+        prevPosition.copy(position)
 
-          velocity.add(gravity.clone().multiplyScalar(delta))
+        acceleration.add(gravity)
 
-          position.add(velocity.clone().multiplyScalar(delta))
-        }
+        velocity.add(acceleration.multiplyScalar(delta))
+
+        position.add(velocity.clone().multiplyScalar(delta))
+        position.add(velocity.clone().multiplyScalar(delta))
+        acceleration.set(0, 0, 0)
       }
     },
     { priority },
@@ -137,24 +149,30 @@ export function PhysicsSystem({ priority, children }: SystemProps) {
                 mtv.negate()
               }
 
-              dynamic.position.add(mtv)
-
-              if (mtv.x) {
+              // zero out velocity on the axis of collision if
+              // the object is moving into the fixed object
+              if (mtv.x && Math.sign(mtv.x) !== Math.sign(dynamic.velocity.x)) {
                 dynamic.velocity.x = 0
+                dynamic.acceleration.x = 0
               }
 
-              if (mtv.y) {
+              if (mtv.y && Math.sign(mtv.y) !== Math.sign(dynamic.velocity.y)) {
                 dynamic.velocity.y = 0
+                dynamic.acceleration.y = 0
               }
 
-              if (mtv.z) {
+              if (mtv.z && Math.sign(mtv.z) !== Math.sign(dynamic.velocity.z)) {
                 dynamic.velocity.z = 0
+                dynamic.acceleration.z = 0
               }
+
+              dynamic.position.add(mtv)
             }
           }
         }
       }
     },
+    // ensure this runs after the velocity update
     { priority: priority + 0.1 },
   )
 
