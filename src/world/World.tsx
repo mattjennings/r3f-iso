@@ -62,8 +62,10 @@ export function World(props: { children: ReactNode }) {
     <WorldContext.Provider
       value={{
         registerUpdateFn,
-        getFrameInterpolation: () =>
-          accumulator.current / (1 / FIXED_UPDATE_FPS),
+        getFrameInterpolation: useCallback(
+          () => accumulator.current / (1 / FIXED_UPDATE_FPS),
+          [],
+        ),
         fixedUpdateFps: FIXED_UPDATE_FPS,
       }}
     >

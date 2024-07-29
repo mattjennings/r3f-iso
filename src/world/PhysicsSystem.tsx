@@ -8,6 +8,7 @@ interface PhysicsContextValue {
 }
 
 interface PhysicsObjectData {
+  id: number
   acceleration: THREE.Vector3
   velocity: THREE.Vector3
   gravity: THREE.Vector3
@@ -21,6 +22,7 @@ export const PhysicsContext = React.createContext<PhysicsContextValue>({
   objects: new Map(),
 })
 
+let nextPhysicsId = 1
 export const usePhysics = (
   object: RefObject<Object3D>,
   data: {
@@ -44,7 +46,12 @@ export const usePhysics = (
   useEffect(() => {
     if (!object.current) return
 
+    if (data.position) {
+      object.current.position.set(...data.position)
+    }
+
     body.current = {
+      id: nextPhysicsId++,
       position: object.current.position.clone(),
       prevPosition: object.current.position.clone(),
       acceleration: new THREE.Vector3(...(data.acceleration ?? [0, 0, 0])),
@@ -100,73 +107,51 @@ export function PhysicsSystem({ priority, children }: SystemProps) {
   )
 
   // handle collisions
+
+  const spatialHash = useRef(
+    new Map<string, { obj: Object3D; physics: PhysicsObjectData }[]>(),
+  )
+
   useFixedUpdate(
     () => {
-      // Crudely check every object against every other object
-      for (const [obj1, physics1] of objects.current) {
-        if (!physics1.collider) continue
+      spatialHash.current.clear()
 
-        for (const [obj2, physics2] of objects.current) {
-          if (!physics2.collider || obj1 === obj2) continue
+      const processedPairs = new Set<string>()
 
-          const positionedCollider1 = physics1.collider
-            .clone()
-            .translate(physics1.position)
+      // Populate the spatial hash with objects
+      for (const [obj, physics] of objects.current) {
+        if (!physics.collider) continue
+        const keys = getHashKeys(physics.position, physics.collider)
+        for (const key of keys) {
+          if (!spatialHash.current.has(key)) {
+            spatialHash.current.set(key, [])
+          }
+          spatialHash.current.get(key)!.push({ obj, physics })
+        }
+      }
 
-          const positionedCollider2 = physics2.collider
-            .clone()
-            .translate(physics2.position)
+      // Check for collisions within each cell
+      const pairIds = ['', ''] // scratch array to avoid allocation
 
-          if (positionedCollider1.intersectsBox(positionedCollider2)) {
-            const mtv = getMTV(positionedCollider1, positionedCollider2)
+      for (const objects of spatialHash.current.values()) {
+        for (let i = 0; i < objects.length; i++) {
+          const physics1 = objects[i].physics
+          for (let j = i + 1; j < objects.length; j++) {
+            const physics2 = objects[j].physics
 
-            if (
-              physics1.collisionType === 'dynamic' &&
-              physics2.collisionType === 'dynamic'
-            ) {
-              const halfMTV = mtv.clone().multiplyScalar(0.5)
+            if (physics1.collider && physics2.collider) {
+              pairIds[0] = `${physics1.id},${physics2.id}`
+              pairIds[1] = `${physics2.id},${physics1.id}`
 
-              physics1.position.add(halfMTV)
-              physics2.position.sub(halfMTV)
-            } else if (
-              (physics1.collisionType === 'dynamic' &&
-                physics2.collisionType === 'fixed') ||
-              (physics1.collisionType === 'fixed' &&
-                physics2.collisionType === 'dynamic')
-            ) {
-              const dynamic =
-                physics1.collisionType === 'dynamic' ? physics1 : physics2
-              const fixed =
-                physics1.collisionType === 'fixed' ? physics1 : physics2
-
-              // Ensure the MTV pushes away from the fixed object
-              const direction = dynamic.position
-                .clone()
-                .sub(fixed.position)
-                .normalize()
-
-              if (direction.dot(mtv) < 0) {
-                mtv.negate()
+              if (
+                processedPairs.has(pairIds[0]) ||
+                processedPairs.has(pairIds[1])
+              ) {
+                continue
               }
-
-              // zero out velocity on the axis of collision if
-              // the object is moving into the fixed object
-              if (mtv.x && Math.sign(mtv.x) !== Math.sign(dynamic.velocity.x)) {
-                dynamic.velocity.x = 0
-                dynamic.acceleration.x = 0
-              }
-
-              if (mtv.y && Math.sign(mtv.y) !== Math.sign(dynamic.velocity.y)) {
-                dynamic.velocity.y = 0
-                dynamic.acceleration.y = 0
-              }
-
-              if (mtv.z && Math.sign(mtv.z) !== Math.sign(dynamic.velocity.z)) {
-                dynamic.velocity.z = 0
-                dynamic.acceleration.z = 0
-              }
-
-              dynamic.position.add(mtv)
+              resolveCollision(physics1, physics2)
+              processedPairs.add(pairIds[0])
+              processedPairs.add(pairIds[1])
             }
           }
         }
@@ -181,6 +166,67 @@ export function PhysicsSystem({ priority, children }: SystemProps) {
       {children}
     </PhysicsContext.Provider>
   )
+}
+
+function resolveCollision(
+  physics1: PhysicsObjectData,
+  physics2: PhysicsObjectData,
+) {
+  const positionedCollider1 = physics1
+    .collider!.clone()
+    .translate(physics1.position)
+
+  const positionedCollider2 = physics2
+    .collider!.clone()
+    .translate(physics2.position)
+
+  if (positionedCollider1.intersectsBox(positionedCollider2)) {
+    const mtv = getMTV(positionedCollider1, positionedCollider2)
+
+    if (
+      physics1.collisionType === 'dynamic' &&
+      physics2.collisionType === 'dynamic'
+    ) {
+      const halfMTV = mtv.clone().multiplyScalar(0.5)
+
+      physics1.position.add(halfMTV)
+      physics2.position.sub(halfMTV)
+    } else if (
+      (physics1.collisionType === 'dynamic' &&
+        physics2.collisionType === 'fixed') ||
+      (physics1.collisionType === 'fixed' &&
+        physics2.collisionType === 'dynamic')
+    ) {
+      const dynamic = physics1.collisionType === 'dynamic' ? physics1 : physics2
+      const fixed = physics1.collisionType === 'fixed' ? physics1 : physics2
+
+      // Ensure the MTV pushes away from the fixed object
+      const direction = dynamic.position.clone().sub(fixed.position).normalize()
+
+      if (direction.dot(mtv) < 0) {
+        mtv.negate()
+      }
+
+      // zero out velocity on the axis of collision if
+      // the object is moving into the fixed object
+      if (mtv.x && Math.sign(mtv.x) !== Math.sign(dynamic.velocity.x)) {
+        dynamic.velocity.x = 0
+        dynamic.acceleration.x = 0
+      }
+
+      if (mtv.y && Math.sign(mtv.y) !== Math.sign(dynamic.velocity.y)) {
+        dynamic.velocity.y = 0
+        dynamic.acceleration.y = 0
+      }
+
+      if (mtv.z && Math.sign(mtv.z) !== Math.sign(dynamic.velocity.z)) {
+        dynamic.velocity.z = 0
+        dynamic.acceleration.z = 0
+      }
+
+      dynamic.position.add(mtv)
+    }
+  }
 }
 
 function getMTV(box1: THREE.Box3, box2: THREE.Box3) {
@@ -200,4 +246,30 @@ function getMTV(box1: THREE.Box3, box2: THREE.Box3) {
   } else {
     return new THREE.Vector3(0, 0, z)
   }
+}
+
+function getHashKeys(position: THREE.Vector3, collider: THREE.Box3) {
+  const gridSize = 100
+  const min = collider.min.clone().add(position)
+  const max = collider.max.clone().add(position)
+
+  const minX = Math.floor(min.x / gridSize)
+  const minY = Math.floor(min.y / gridSize)
+  const minZ = Math.floor(min.z / gridSize)
+
+  const maxX = Math.ceil(max.x / gridSize)
+  const maxY = Math.ceil(max.y / gridSize)
+  const maxZ = Math.ceil(max.z / gridSize)
+
+  const keys = []
+
+  for (let x = minX; x <= maxX; x += 1) {
+    for (let y = minY; y <= maxY; y += 1) {
+      for (let z = minZ; z <= maxZ; z += 1) {
+        keys.push(`${x},${y},${z}`)
+      }
+    }
+  }
+
+  return keys
 }
