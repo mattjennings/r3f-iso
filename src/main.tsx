@@ -11,8 +11,8 @@ const canvas = document.querySelector('canvas')
 const root = createRoot(canvas!)
 
 const resolution = {
-  width: 1920 * window.devicePixelRatio,
-  height: 1080 * window.devicePixelRatio,
+  width: 480 * window.devicePixelRatio,
+  height: 270 * window.devicePixelRatio,
 }
 
 root.configure({
@@ -20,12 +20,6 @@ root.configure({
   frameloop: 'demand',
   dpr: window.devicePixelRatio,
   events,
-  orthographic: true,
-  camera: {
-    zoom: 4,
-    near: -1000,
-    far: 1000,
-  },
   size: {
     top: 0,
     left: 0,

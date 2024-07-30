@@ -1,37 +1,24 @@
-import { OrbitControls, OrthographicCamera } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import { useRef } from 'react'
+import { ISO_ANGLE, IsoCamera, useIsoCamera } from 'src/components/iso-camera'
+
 import { useKeyboard, useKeyDown } from 'src/hooks/input/keyboard'
 import { usePhysics } from 'src/world/PhysicsSystem'
 import { useFixedUpdate } from 'src/world/World'
 import * as THREE from 'three'
 
-const ISO_ANGLE = 55
-
 export default function Scene() {
   return (
     <>
-      <Camera />
-      <OrbitControls enableZoom={false} />
+      <IsoCamera>
+        <Player />
+        <Floor position={[0, 0, 0]} size={16 * 100} color="green" />
+        <Floor position={[-16, 16, -16]} size={16 * 4} />
 
-      <Player />
-      <Floor position={[0, 0, 0]} size={16 * 10} />
-      <Floor position={[-16, -16, -16]} size={16 * 4} />
-      <Floor position={[-16, 0, -16]} size={16 * 4} />
-      <Floor position={[-16, 16, -16]} size={16 * 4} />
-
-      <directionalLight
-        ref={(r) => {
-          r?.lookAt(0, 0, 0)
-        }}
-        intensity={2}
-        castShadow
-        position={[0, 200, 0]}
-        shadow-camera-left={-200}
-        shadow-camera-right={200}
-        shadow-camera-top={200}
-        shadow-camera-bottom={-200}
-      />
+        <Floor position={[-32, 16, -120]} size={16 * 4} depth={16 * 8} />
+        <Floor position={[-32, 16, 120]} size={16 * 4} depth={16 * 8} />
+        <Floor position={[120, 16, 0]} size={16 * 4} depth={16 * 8} />
+        <Floor position={[-120, 16, 0]} size={16 * 4} depth={16 * 8} />
+      </IsoCamera>
     </>
   )
 }
@@ -39,9 +26,13 @@ export default function Scene() {
 function Floor({
   position,
   size,
+  color = 'gray',
+  depth = 16,
 }: {
   position: [number, number, number]
+  depth?: number
   size: number
+  color?: string
 }) {
   const ref = useRef<THREE.Mesh>(null)
   usePhysics(ref, { collider: 'auto', collisionType: 'fixed' })
@@ -52,10 +43,10 @@ function Floor({
       position={position}
       rotation={[-Math.PI / 2, 0, 0]}
       receiveShadow
-      castShadow
     >
-      <boxGeometry args={[size, size, 16]} />
-      <meshStandardMaterial color="gray" />
+      <boxGeometry args={[size, size, depth]} />
+
+      <meshStandardMaterial color={color} />
     </mesh>
   )
 }
@@ -71,6 +62,11 @@ function Player() {
     collisionType: 'dynamic',
   })
 
+  const isoCamera = useIsoCamera()
+
+  useFrame(() => {
+    isoCamera.setTarget(ref.current!.position)
+  })
   useFixedUpdate(() => {
     const vel = new THREE.Vector3()
     const speed = 100
@@ -113,74 +109,8 @@ function Player() {
   return (
     <mesh ref={ref} castShadow receiveShadow>
       <boxGeometry attach="geometry" args={[16, 16, 16]} />
+
       <meshStandardMaterial color="lightblue" />
     </mesh>
-  )
-}
-
-function Camera() {
-  const light = useRef<THREE.DirectionalLight>(null)
-  const locked = useRef(true)
-  const rotation = useRef(45)
-
-  useFrame((state, delta) => {
-    const camera = state.camera
-    const step = 0.05
-
-    const targetPosition = new THREE.Vector3(0, 0, 0)
-
-    if (camera) {
-      if (locked.current) {
-        const radius = 40
-        const angle = (rotation.current * Math.PI) / 180
-
-        // Calculate the camera position
-        const x = targetPosition.x + radius * Math.cos(angle)
-        const z = targetPosition.z + radius * Math.sin(angle)
-
-        const isoAngleRad = (ISO_ANGLE * Math.PI) / 180
-
-        camera.position.lerp(
-          new THREE.Vector3(
-            x,
-            targetPosition.y + radius * Math.sin(isoAngleRad),
-            z,
-          ),
-          step,
-        )
-
-        // Ensure the camera looks at the target position
-        camera.lookAt(targetPosition)
-        camera.updateProjectionMatrix()
-      }
-
-      if (light.current) {
-        light.current.position.set(
-          camera.position.x - ISO_ANGLE / 4,
-          camera.position.y,
-          camera.position.z,
-        )
-        light.current.lookAt(targetPosition)
-      }
-    }
-  })
-
-  useKeyDown('Tab', (e) => {
-    e.preventDefault()
-    locked.current = !locked.current
-  })
-
-  useKeyDown('KeyQ', () => {
-    rotation.current -= 90
-  })
-
-  useKeyDown('KeyE', () => {
-    rotation.current += 90
-  })
-
-  return (
-    <>
-      <directionalLight ref={light} color="white" intensity={2} />
-    </>
   )
 }
